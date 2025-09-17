@@ -1,280 +1,180 @@
 pipeline {
     agent none
-
+    
     environment {
         BUILD_TIMESTAMP = "${new Date().format('yyyyMMddHHmmss')}"
-        APP_NAME = "uem"
+        APP_NAME = "authenticator"
     }
 
     stages {
-        stage('Build App') {
+        
+        stage('Build') {
             when {
                 expression { return params.BRANCH?.trim() }
             }
-            agent { label 'windowsbuilder.mitsogo.com'}
-
+            agent {label 'windowsbuilder.mitsogo.com'}
             steps {
-
-                /*===============================
-                 Cleaning workspace before build
-                ===============================*/
-                script {
-                    echo "Cleaning workspace..."
-                    deleteDir()
-                }
-
-            
-                /*================
-                 Build Dependency 
-                ================*/
-                withCredentials([
-                    file(credentialsId: 'JENKINS_AWS_CREDENTIALS', variable: 'AWS_SHARED_CREDENTIALS_FILE'), 
-                    string(credentialsId: 'gitpassstring', variable: 'GIT_PASSWORD'),
-                    ]) {
-                    
-                    bat '''@echo off
-                        mkdir %BUILD_TIMESTAMP%
-                        cd %BUILD_TIMESTAMP%
-                        git.exe clone https://devops-team:%GIT_PASSWORD%@gitlab.mitsogo.com/desktopuiapps/macosuiagent
-                        if %ERRORLEVEL% NEQ 0 ( 
-                            echo "error:failed cloning  repo"
-                            exit 2
-                        )
-                    '''
-                    
-                    dir("${WORKSPACE}/${BUILD_TIMESTAMP}/macosuiagent") {
-                        script {
-                            // Step 1: Get the raw JSON content as a string
-                            def versionJson = powershell(script: 'Get-Content -Path ".\\package.json"', returnStdout: true).trim()
-                            // Step 2: Parse the raw JSON string using Jenkins's readJSON step
-                            def version = readJSON text: versionJson
-                            // Step 3: Access properties and assign to environment variables
-                            def appVersion = version.version
-                            def parts = appVersion.split('\\.')
-                            env.APP_VERSION = parts[0..2].join('')
-                            env.APP_VERSION_STRING = parts[0..2].join('.')
-                            env.GIT_COMMIT_SHA = powershell(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
-                            // Use println for visibility in the console log
-                            println "GIT_COMMIT_SHA : ${env.GIT_COMMIT_SHA}"
-                            println "APP_VERSION : ${env.APP_VERSION}"
-                            println "APP_VERSION_STRING : ${env.APP_VERSION_STRING}"
-                            // Check for missing values
-                            if (!env.APP_VERSION || !env.GIT_COMMIT_SHA || !env.APP_VERSION_STRING) {
-                                error("APP_VERSION or GIT_COMMIT_SHA or APP_VERSION_STRING is missing. Exiting the pipeline.")
-                            }
-                        }
-                    }
-                    
-                    powershell '''
-                        $value = ${env:BRANCH}
-                        $env:BUILD_NUMBER = $env:BUILD_VERSION
-                        $tempdir = $env:BUILD_TIMESTAMP
-                        new-item -type directory $tempdir
-                        $Env:PATH = "C:\\Users\\devops\\AppData\\Roaming\\nvm\\;C:\\Program Files\\nodejs\\;C:\\Hexnode-Builder\\python-env\\Scripts\\;" + $Env:PATH
-                        $Env:PATH += ";C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin" 
-                        $Env:PATH = "C:\\Users\\Devops\\AppData\\Roaming\\nvm\\v" + $env:NODE_VERSION + "\\;" + $Env:PATH
-                        $Env:PATH
-                        $S3_BASE = "s3://testing-hexnode/jenkins/$ENV:JOB_NAME/$ENV:BUILD_ID"
-                        
-                        function message {
-                            param ( [string]$message )
-                            Write-Output "`n[ $(Get-Date -Format "yyyy-MM-dd HH:mm:ss") $env:COMPUTERNAME] $message"
-                        }
-                        
-                        
-                        message "info: checking node version $env:NODE_VERSION is available in this node."
-                        $nodeVersions = Get-ChildItem -Path "C:\\Users\\Devops\\AppData\\Roaming\\nvm\\" -Directory | Where-Object { $_.Name -match \'^v\\d+\\.\\d+\\.\\d+$\' } | ForEach-Object { $_.Name -replace \'^v\', \'\' }
-                        if ($nodeVersions -contains $env:NODE_VERSION) {
-                            message "info: node version $env:NODE_VERSION is available."
-                        } else {
-                            message "info: node version $env:NODE_VERSION is not available."
-                            exit 1
-                        }
-                        
-                        Set-Location macosuiagent
-                        $existed_in_remote= git.exe ls-remote --heads origin $value 
-                        if ($existed_in_remote) { 
-                            Write-Output  $existed_in_remote 
-                            git.exe checkout $value 
-                        }
-                        else {
-                          	message "critical: branch $value does not exist"
-                            Exit 
-                        }
-                        
-                        
-                        $applicationname = "Hexnode UEM Setup {0}.exe" -f $env:APP_VERSION_STRING
-                        message "info: application name is $applicationname"
-                        
-                        
-                        message "info: printing node version"
-                        node -v
-                        
-                        
-                        message "info: installing npm packages"
-                        npm install
-                        $NPMExitCode = $LASTEXITCODE
-                        If ($NPMExitCode -ne 0) {
-                             message "critical: error while installing project packages and dependencies"
-                             Exit $NPMExitCode
-                        }
-                        message "info: installed all the project packages and dependencies"
-                        
-                        
-                        # message "info: exporting signing certificate and signing password "
-                        # $Env:CSC_LINK = "C:\\Hexnode-Builder\\resource\\mitsogoinc_codesigning.p12"
-                        # $Env:CSC_KEY_PASSWORD = $Env:SIGNPASSWORD
-                        $Env:ELECTRON_BUILDER_CACHE = $tempdir
-                        
-                        
-                        message "info: creating windows pacakge"
-                        npm run pack.windows
-                        $PACKExitCode = $LASTEXITCODE
-                        If ($PACKExitCode -ne 0) {
-                             message "critical: error while running pack.windows"
-                             Exit $PACKExitCode
-                        }
-                        message "info: BUILD SUCCESSFUL..!"
-                        
-                        
-                        $path1 = ".\\dist\\win-unpacked\\Hexnode UEM.exe"
-                        $path2 = ".\\dist\\win-ia32-unpacked\\Hexnode UEM.exe"
-                        $win_unpacked = if (Test-Path $path1) { $path1 } else { $path2 }
-                        
-                        
-                        message "info: uploading unsigned file: $win_unpacked to s3..."
-                        aws s3 cp "$win_unpacked" "$S3_BASE/$tempdir/win-unpacked/Hexnode UEM.exe" --region eu-central-1 --no-progress --profile testing-hexnode
-                        $AWSExitCode = $LASTEXITCODE
-                        If ($AWSExitCode -ne 0) {
-                             message "critical: error while uploading the executable file to S3"
-                             Exit $AWSExitCode
-                        }
-                        
-                        
-                        
-                        message "info: signing file: $win_unpacked in job: WINDOWS_APP_SIGNING"'''
-                }
-
-                /*==================
-                 Signing Dependency
-                ===================*/
-                script {
-                    build job: 'TEST_DEPLOY_WINDOWS_SIGN_APP', parameters: [
-                        string(name: 'S3_URL',           value: "\"s3://testing-hexnode/jenkins/$JOB_NAME/$BUILD_ID/$BUILD_TIMESTAMP/win-unpacked/Hexnode UEM.exe\""),
-                        string(name: 'FILE_NAME',        value: "Hexnode UEM.exe")
-                    ]
-                }
-
                 
-                /*==================
-                 Building Agent App
-                ===================*/
-                withCredentials([file(credentialsId:'JENKINS_AWS_CREDENTIALS',variable:'AWS_SHARED_CREDENTIALS_FILE')]) {
+                /*=====================
+                 Building Updater App
+                =======================*/
+                withCredentials([string(credentialsId: 'gitpassstring', variable: 'GIT_PASSWORD'), string(credentialsId: 'windows_installer_signin', variable: 'SIGNPASSWORD'), string(credentialsId: 'jenkins_proxy', variable: 'https_proxy'), file(credentialsId: 'JENKINS_AWS_CREDENTIALS', variable: 'AWS_SHARED_CREDENTIALS_FILE')]) {
                     script{
                         def output = powershell(returnStdout: true, script: '''
-                        $Env:PATH = "C:\\Users\\devops\\AppData\\Roaming\\nvm\\;C:\\Program Files\\nodejs\\;C:\\Hexnode-Builder\\python-env\\Scripts\\;" + $Env:PATH
-                        $Env:PATH += ";C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin" 
-                        $Env:PATH = "C:\\Users\\Devops\\AppData\\Roaming\\nvm\\v" + $env:NODE_VERSION + "\\;" + $Env:PATH
-                        $Env:PATH
-                        $env:BUILD_NUMBER = $env:BUILD_VERSION
-                        $tempdir = $env:BUILD_TIMESTAMP
-                        $S3_BASE = "s3://testing-hexnode/jenkins/$ENV:JOB_NAME/$ENV:BUILD_ID"
-                          
-                        function message {
-                            param ( [string]$message )
-                            Write-Output "`n[ $(Get-Date -Format "yyyy-MM-dd HH:mm:ss") $env:COMPUTERNAME] $message"
-                        }
-                          
-                        Set-Location $tempdir\\macosuiagent
-                        message "info: current working dir is: $(pwd)"
-                        
-                        # nvm list
-                        # nvm use $env:NODE_VERSION
-                        # $TMPExitCode = $LASTEXITCODE
-                        # If ($TMPExitCode -ne 0) {
-                        #      message "critical: unable to use node with version: $env:NODE_VERSION"
-                        #      Exit $TMPExitCode
-                        # }
-                        
-                        
-                        
-                        $applicationname = "Hexnode UEM Setup {0}.exe" -f $env.APP_VERSION_STRING
-                        message "info: application name is $applicationname"
-                        
-                        message "info: downloading signed.HexnodeUEM.exe file from s3 to .\\dist\\signed.HexnodeUEM.exe"
-                        aws s3 cp "$S3_BASE/$tempdir/win-unpacked/Hexnode UEM.exe" ".\\dist\\signed.HexnodeUEM.exe" --region eu-central-1 --no-progress --profile testing-hexnode
-                        $AWSExitCode = $LASTEXITCODE
-                        If ($AWSExitCode -ne 0) {
-                             message "critical: error while downloading the executable file from S3"
-                             Exit $AWSExitCode
-                        }
-                        
-                        $Env:ELECTRON_BUILDER_CACHE = $tempdir
-                        
-                        message "info: rebuilding windows pacakge with signed file..."
-                        npm run pack.windows
-                          
-                        $PACKExitCode = $LASTEXITCODE
-                        If ($PACKExitCode -ne 0) {
-                             message "critical: error while running pack.windows"
-                             Exit $PACKExitCode
-                        }
-                        message "info: REBUILD SUCCESSFUL..!"
-                        
-                        if (-not(Test-Path -Path ".\\dist\\$applicationname" -PathType Leaf)) {
-                        	Copy-Item ".\\dist\\Hexnode UEM.exe" ..\\
-                        	$applicationname = "Hexnode UEM.exe"
-                        }
-                        else {
-                        	Copy-Item ".\\dist\\$applicationname" ..\\
-                        }
-                        
-                        $hashOutput = certutil -hashfile ".\\dist\\$applicationname" SHA256
-                        $CHECKSUM = $hashOutput[1].Trim()
-                        
-                        # Fetching subdomain from PORTALNAME
-                        $PORTAL = $env:PORTALNAME.Split(".")[0]  
-                          
-                        message "info: uploading package file to s3"
-                        aws s3 cp ".\\dist\\$applicationname" "s3://downloads.hexnode.com/windows-agent/beta/$PORTAL/HexnodeUEM.exe" --profile jenkins --no-progress --acl public-read
-                        
-                        $AWSExitCode = $LASTEXITCODE
-                        If ($AWSExitCode -ne 0) {
-                             message "critical: error while uploading the executable file to S3"
-                             Exit $AWSExitCode
-                        }
-                        
-                        message "info:zip file is available in s3 location: "
-                        Write-Output "https://downloads.hexnode.com/windows-agent/beta/$PORTAL/HexnodeUEM.exe"
-                        
-                        Write-Output "CHECKSUM_MARKER:$CHECKSUM"
-                          
-                        message "info: signing file: Hexnode UEM.exe in job: WINDOWS_APP_SIGNING" 
-                        
-                        
+                            $value = ${env:BRANCH}
+                            
+                            $env:BUILD_NUMBER = $env:BUILD_VERSION
+                            
+                            $tempdir = $env:BUILD_TIMESTAMP
+                            New-Item -Type Directory $tempdir
+                            
+                            $Env:PATH = "C:\\Users\\devops\\AppData\\Roaming\\nvm\\;C:\\Program Files\\nodejs\\;C:\\Hexnode-Builder\\python-env\\Scripts\\;" + $Env:PATH
+                            $Env:PATH += ";C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin"
+                            $Env:PATH = "C:\\Users\\devops\\AppData\\Roaming\\nvm\\v" + $env:NODE_VERSION + "\\;" + $Env:PATH
+                            $Env:PATH
+                            
+                            function message {
+                                param ( [string]$message )
+                                Write-Output "`n[ $(Get-Date -Format "yyyy-MM-dd HH:mm:ss") $env:COMPUTERNAME] $message"
+                            }
+                            
+                            Set-Location $tempdir
+                            message "info: current working dir is: $(pwd)"
+                            
+                            message "info: cloning windowshexauthenticator repository"
+                            git.exe clone https://devops-team:${env:GIT_PASSWORD}@gitlab.mitsogo.com/windowsapplication/windowshexauthenticator
+                            $TMPExitCode = $LASTEXITCODE
+                            If ($TMPExitCode -ne 0) {
+                                 message "critical: error while cloning git repo."
+                                 Exit $TMPExitCode
+                            }
+                            
+                            message "info: repo successfully cloned, changed to windowshexauthenticator directory"
+                            Set-Location windowshexauthenticator
+                            
+                            
+                            $existed_in_remote = git.exe ls-remote --heads origin $value
+                            
+                            if ($existed_in_remote) {
+                                Write-Output $existed_in_remote
+                                git.exe checkout $value
+                            }
+                            else {
+                                message "critical: branch $value does not exist"
+                                Exit
+                            }
+                            
+                            
+                            if ([string]::IsNullOrEmpty($env:FILEVERSION)) {
+                                message "info: The FILEVERSION not provided."
+                            } else {
+                                message "info: setting up FILEVERSION - $env:FILEVERSION"
+                                (Get-Content "package.json") -replace \'"version":\\s*".*?"\', "`"version`": `"$env:FILEVERSION`"" | 
+                                Set-Content ".\\package.json"
+                            }
+                            message "info: getting version info from package.json file"
+                            try {
+                                $x = Get-Content -Path ".\\package.json" -ErrorAction Stop | ConvertFrom-Json
+                                $VERSION = $x.version
+                            }
+                            catch {
+                                Write-Output "`nError Message: " $_.Exception.Message
+                                Write-Output "`nError in Line: " $_.InvocationInfo.Line
+                                Write-Output "`nError in Line Number: "$_.InvocationInfo.ScriptLineNumber
+                                Write-Output "`nError Item Name: "$_.Exception.ItemName
+                                Exit
+                            }
+                            
+                            $applicationname = "Hexnode Authenticator Setup {0}.exe" -f $x.version
+                            message "info: application name is $applicationname"
+                            
+                            message "info: printing node version"
+                            node -v
+                            message "info: installing npm packages"
+                            npm install
+                            
+                            $NPMExitCode = $LASTEXITCODE
+                            If ($NPMExitCode -ne 0) {
+                                 message "critical: error while installing project packages and dependencies"
+                                 Exit $NPMExitCode
+                            }
+                            
+                            message "info: installed all the project packages and dependencies"
+                            
+                            $Env:ELECTRON_BUILDER_CACHE = $tempdir
+                            
+                            message "info: creating windows package"
+                            npm run build-electron
+                            
+                            $PACKExitCode = $LASTEXITCODE
+                            If ($PACKExitCode -ne 0) {
+                                 message "critical: error while running build-electron"
+                                 Exit $PACKExitCode
+                            }
+                            message "info: BUILD SUCCESSFUL..!"
+                              
+                            $path1 = ".\\dist\\win-unpacked"
+                            $path2 = ".\\dist\\win-ia32-unpacked"
+                            $win_unpacked = if (Test-Path $path1) { $path1 } else { $path2 }
+                            
+                            $sevenZipPath = "C:\\Program Files\\7-Zip\\7z.exe"
+                            
+                            message "info: making zip file of \'$win_unpacked\' folder"
+                            Set-Location $win_unpacked
+                            $zipFile = "$tempdir\\HexnodeAuthenticator.zip"
+                            & $sevenZipPath a -tzip $zipFile *
+                            
+                            $ZIPExitCode = $LASTEXITCODE
+                            If ($ZIPExitCode -ne 0) {
+                                 message "critical: error while making zip file for \'$win_unpacked\' folder"
+                                 Exit $ZIPExitCode
+                            }
+                            message "info: zip archive is available in location $zipFile"
+                              
+                            $hashOutput = certutil -hashfile "$zipFile" SHA256
+                            $CHECKSUM = $hashOutput[1].Trim()
+                              
+                            # Fetching subdomain from PORTALNAME
+                            $PORTAL = $env:PORTALNAME.Split(".")[0]  
+                              
+                            message "info: uploading ZIP file: $zipFile to s3..."
+                            $S3_BASE = "s3://downloads.hexnode.com/windows-agent/beta/$PORTAL"
+                            aws s3 cp "$zipFile" "$S3_BASE/HexnodeAuthenticator.zip" --profile jenkins --no-progress --acl public-read
+                              
+                            $AWSExitCode = $LASTEXITCODE
+                            If ($AWSExitCode -ne 0) {
+                                 message "critical: error while uploading the ZIP file to S3"
+                                 Exit $AWSExitCode
+                            }
+                            
+                            message "info:zip file is available in s3 location: "
+                            Write-Output "https://downloads.hexnode.com/windows-agent/beta/$PORTAL/HexnodeAuthenticator.zip"
+                            
+                            Write-Output "VERSION_CHECK:$VERSION"
+                            Write-Output "CHECKSUM_MARKER:$CHECKSUM"
+                              
+                            message "info: signing unsigned file: $win_unpacked"
                         ''').trim()
-                        
                         def checksumMatch = (output =~ /CHECKSUM_MARKER:(.*)/)
-                        
+                        def version = (output =~ /VERSION_CHECK:(.*)/)
                         env.CHECKSUM     = checksumMatch ? checksumMatch[0][1].trim() : ""
-                        
+                        env.ASSEMBLY_VERSION = version ? version[0][1].trim() : ""
                         echo "${env.CHECKSUM}"
-                        
+                        echo "${env.ASSEMBLY_VERSION}"
                     }
-                }
-
-
-                /*=================
-                 Signing Agent App
-                =================*/
-
-                script {
-                    def PORTAL = PORTALNAME.tokenize('.')[0]
-                    build job: 'TEST_DEPLOY_WINDOWS_SIGN_APP', parameters: [
-                        string(name: 'S3_URL',           value: "\"s3://downloads.hexnode.com/windows-agent/beta/$PORTAL/HexnodeUEM.exe\""),
-                        string(name: 'FILE_NAME',        value: "Hexnode UEM.exe"),
-                        string(name: 'IS_S3_URL_PUBLIC', value: "True")
-                    ]
+                    
+                    
+                    /*===================
+                    Signing Updater App
+                    ====================*/
+                    script {
+                        def PORTAL = PORTALNAME.tokenize('.')[0]
+                        build job: 'TEST_DEPLOY_WINDOWS_SIGN_APP', parameters: [
+                            string(name: 'S3_URL',           value: "\"s3://downloads.hexnode.com/windows-agent/beta/$PORTAL/HexnodeAuthenticator.zip\""),
+                            string(name: 'FILE_NAME',        value: "Hexnode Authenticator.exe"),
+                            string(name: 'IS_S3_URL_PUBLIC', value: "True")
+                        ]
+                    }
                 }
             }
         }
@@ -284,10 +184,7 @@ pipeline {
             }
             agent { label 'windowsbuilder.mitsogo.com' }
             steps {
-                script {
-                    echo "Cleaning workspace..."
-                    deleteDir()
-                }
+               
                 
                 withCredentials([
                     file(credentialsId: 'jenkins_aws_credential', variable: 'AWS_SHARED_CREDENTIALS_FILE'),
@@ -322,45 +219,60 @@ pipeline {
                         """
                         script{
                             def output = powershell(returnStdout: true, script: '''
-                            function message($msg) {
-                                $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-                                $nodeName = $env:NODE_NAME
-                                Write-Host "[$timestamp $nodeName] $msg"
-                            }
-                        
-                            message "info: Starting extraction and checksum calculation..."
-                        
-                            $targetFile = Get-ChildItem -Path . -Recurse -Include *.exe | Select-Object -First 1
-                        
-                            if ($targetFile) {
-                                message "info: Found executable: $($targetFile.FullName)"
+                                function message($msg) {
+                                    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                                    $nodeName = $env:NODE_NAME
+                                    Write-Host "[$timestamp $nodeName] $msg"
+                                }
+                            
+                                message "info: Starting extraction and checksum calculation..."
+                            
                                 try {
-                                    $versionInfo = (Get-Item $targetFile.FullName).VersionInfo
-                                    $assemblyVersion = $versionInfo.ProductVersion
+                                    Expand-Archive -Path HexnodeAuthenticator.zip -DestinationPath extracted -Force
                                 } catch {
-                                    message "error: Failed to read version info."
+                                    message "error: Failed to extract ZIP file."
                                     exit 1
                                 }
-                        
-                                $PORTAL = $env:PORTALNAME.Split(".")[0]
-                                $exeChecksum = (Get-FileHash $targetFile.FullName -Algorithm SHA256).Hash
-                                Write-Output "VERSION_CHECK:$assemblyVersion"
-                                Write-Output "CHECKSUM_MARKER:$exeChecksum"
-                        
-                                message "info: Metadata:"
-                                Get-Content beta_app_update.properties
-                            } else {
-                                message "error: No .exe file found."
-                                exit 1
-                            }
-                        ''').trim()
-                        def checksumMatch = (output =~ /CHECKSUM_MARKER:(.*)/)
-                        def version = (output =~ /VERSION_CHECK:(.*)/)
-                        env.CHECKSUM     = checksumMatch ? checksumMatch[0][1].trim() : ""
-                        env.APP_VERSION_STRING = version ? version[0][1].trim() : ""
-                        echo "${env.CHECKSUM}"
-                        echo "${env.APP_VERSION_STRING}"
+                            
+                                try {
+                                    $zipChecksum = (Get-FileHash -Path "HexnodeAuthenticator.zip" -Algorithm SHA256).Hash
+                                } catch {
+                                    message "error: Failed to calculate ZIP checksum."
+                                    exit 1
+                                }
+                            
+                                $targetFile = Get-ChildItem -Path extracted -Recurse -Include *.exe | Select-Object -First 1
+                            
+                                if ($targetFile) {
+                                    message "info: Found executable: $($targetFile.FullName)"
+                                    try {
+                                        $versionInfo = (Get-Item $targetFile.FullName).VersionInfo
+                                        $assemblyVersion = $versionInfo.ProductVersion
+                                    } catch {
+                                        message "error: Failed to read version info."
+                                        exit 1
+                                    }
+                            
+                                    $PORTAL = $env:PORTALNAME.Split(".")[0]
+                                    Write-Output "VERSION_CHECK:$assemblyVersion"
+                                    Write-Output "CHECKSUM_MARKER:$zipChecksum"
+                                    
+                                    message "info: Metadata:"
+                                    Get-Content beta_app_update.properties
+                                } else {
+                                    message "error: No .exe file found."
+                                    exit 1
+                                }
+                            ''').trim()
+                            def checksumMatch = (output =~ /CHECKSUM_MARKER:(.*)/)
+                            def version = (output =~ /VERSION_CHECK:(.*)/)
+                            env.CHECKSUM     = checksumMatch ? checksumMatch[0][1].trim() : ""
+                            env.ASSEMBLY_VERSION = version ? version[0][1].trim() : ""
+                            echo "${env.CHECKSUM}"
+                            echo "${env.ASSEMBLY_VERSION}"
                         }
+                        
+                        
                     }
                 }
             }
@@ -371,11 +283,7 @@ pipeline {
                 withCredentials([sshUserPrivateKey(credentialsId: 'sshhub_key', keyFileVariable: 'SSHHUB_KEY', usernameVariable: 'SSHHUB_USER'), sshUserPrivateKey(credentialsId: 'ansible_key', keyFileVariable: 'ANSIBLE_KEY', usernameVariable: 'ANSIBLE_USER'), string(credentialsId: 'sudopassword', variable: 'SUDOPASS'), string(credentialsId: 'gitpassstring', variable: 'GIT_PASSWORD'), file(credentialsId: 'CLOUD_DB_CREDENTIALS', variable: 'SHARED_CREDENTIALS_FILE')]) {
                     
                     script {
-                        echo "Cleaning workspace..."
-                        deleteDir()
-                    }
-                    
-                    script {
+                        
                         sh '''
                         #!/bin/bash
                         set +x
@@ -391,23 +299,22 @@ pipeline {
                             message "error: select portalname from dropdown"
                             exit 1
                         fi
-                        PORTAL="$(echo "\$PORTALNAME" | cut -d'.' -f1)"
-                        DOWNLOAD_URL="https://downloads.hexnode.com/windows-agent/beta/${PORTAL}/HexnodeUEM.exe"
                         message "remarks: \$REMARKS"
                         message "requester: \$REQUESTER"
                         message "info: executing script update_uem_apps_for_windows.py in portal \$PORTALNAME"
                         
-
+                        PORTAL="$(echo "\$PORTALNAME" | cut -d'.' -f1)"
+                        DOWNLOAD_URL="https://downloads.hexnode.com/windows-agent/beta/${PORTAL}/HexnodeAuthenticator.zip"
                         cd \${JENKINS_WORKDIR}/repos/cart-scripts
                         message "info: pulling latest cart scripts from gitlab"
                         git pull "https://devops-team:\${GIT_PASSWORD}@gitlab.mitsogo.com/cart/cart-scripts.git"
                         SCRIPTNAME="/var/lib/jenkins/repos/cart-scripts/common/beta_release/update_uem_apps_for_windows.py"
                         BINARY="/usr/bin/python"
                         if [ "$BETA_ENABLED" = "true" ]; then
-                            ARGUMENTS="'--app_name ${APP_NAME} --download_url ${DOWNLOAD_URL} --version ${APP_VERSION_STRING} --checksum ${CHECKSUM} --beta_enabled'"
+                            ARGUMENTS="'--app_name ${APP_NAME} --download_url ${DOWNLOAD_URL} --version ${ASSEMBLY_VERSION} --checksum ${CHECKSUM} --beta_enabled'"
                             echo \${ARGUMENTS}
                         else
-                            ARGUMENTS="'--app_name ${APP_NAME} --download_url ${DOWNLOAD_URL} --version ${APP_VERSION_STRING} --checksum ${CHECKSUM}'"
+                            ARGUMENTS="'--app_name ${APP_NAME} --download_url ${DOWNLOAD_URL} --version ${ASSEMBLY_VERSION} --checksum ${CHECKSUM}'"
                             echo \${ARGUMENTS}
                         fi
                         cd \${JENKINS_WORKDIR}/jenkins/playbooks/runscript/
@@ -456,21 +363,21 @@ pipeline {
             }
         }
     }
-    // post {
-    //     always {
-    //         /*===================
-    //          Cleaning Workspaces
-    //         ===================*/
-    //         script {
-    //             node('built-in') {
-    //                 echo 'Cleaning workspace...'
-    //                 deleteDir()
-    //             }
-    //             node('windowsbuilder.mitsogo.com') {
-    //                 echo 'Cleaning workspace...'
-    //                 deleteDir()
-    //             }
-    //         }
-    //     }
-    // }
+    post {
+        always {
+            /*===================
+             Cleaning Workspaces
+            ===================*/
+            script {
+                node('built-in') {
+                    echo 'Cleaning workspace...'
+                    deleteDir()
+                }
+                node('windowsbuilder.mitsogo.com') {
+                    echo 'Cleaning workspace...'
+                    deleteDir()
+                }
+            }
+        }
+    }
 }
