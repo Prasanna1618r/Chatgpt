@@ -7,7 +7,7 @@
                    name="search" 
                    value="{{ search_query }}" 
                    placeholder="Search by release name..."
-                   hx-get="{% url 'releases_table' %}"
+                   hx-get="{% url 'customrelease_view' %}"
                    hx-trigger="keyup changed delay:1000ms, search"
                    hx-target="#main-content"
                    hx-swap="innerHTML"
@@ -19,10 +19,10 @@
     <table class="table" id="dataTable">
         <thead>
             <tr>
-                <th hx-get="{% url 'releases_table' %}?search={{ search_query }}&sort={% if current_sort == 'custom_release_name' %}-custom_release_name{% else %}custom_release_name{% endif %}"
+                <th hx-get="{% url 'customrelease_view' %}?search={{ search_query }}&sort={% if current_sort == 'custom_release_name' %}-custom_release_name{% else %}custom_release_name{% endif %}"
                     hx-target="#main-content"
                     hx-swap="innerHTML">
-                    Custom Release Name
+                    Custom Release
                     {% if current_sort == 'custom_release_name' %}
                         <i class='bx bx-up-arrow-alt'></i>
                     {% elif current_sort == '-custom_release_name' %}
@@ -30,10 +30,10 @@
                     {% endif %}
                 </th>
                 
-                <th hx-get="{% url 'releases_table' %}?search={{ search_query }}&sort={% if current_sort == 'release_version' %}-release_version{% else %}release_version{% endif %}"
+                <th hx-get="{% url 'customrelease_view' %}?search={{ search_query }}&sort={% if current_sort == 'release_version' %}-release_version{% else %}release_version{% endif %}"
                     hx-target="#main-content"
                     hx-swap="innerHTML">
-                    Release Version
+                    Version
                     {% if current_sort == 'release_version' %}
                         <i class='bx bx-up-arrow-alt'></i>
                     {% elif current_sort == '-release_version' %}
@@ -43,7 +43,7 @@
 
                 <th>Description</th>
                 
-                <th hx-get="{% url 'releases_table' %}?search={{ search_query }}&sort={% if current_sort == 'release_date' %}-release_date{% else %}release_date{% endif %}"
+                <th hx-get="{% url 'customrelease_view' %}?search={{ search_query }}&sort={% if current_sort == 'release_date' %}-release_date{% else %}release_date{% endif %}"
                     hx-target="#main-content"
                     hx-swap="innerHTML">
                     Date
@@ -54,10 +54,10 @@
                     {% endif %}
                 </th>
                 
-                <th>List of Portals</th>
+                <th>Portals</th>
             </tr>
         </thead>
-        <tbody>
+        <tbody id="tableBody">
             {% if releases %}
                 {% for release in releases %}
                     <tr>
@@ -90,7 +90,7 @@
     <div class="rows-per-page">
         <span>Rows per page:</span>
         <select id="rows-per-page" 
-                hx-get="{% url 'releases_table' %}" 
+                hx-get="{% url 'customrelease_view' %}" 
                 hx-target="#main-content" 
                 hx-swap="innerHTML" 
                 hx-include="[name='search'],[name='sort']"
@@ -100,23 +100,21 @@
             <option value="50" {% if rows_per_page == 50 %}selected{% endif %}>50</option>
         </select>
     </div>
-    
     <div class="page-info">
         <span id="page-info">
             Showing {{ start_item }}-{{ end_item }} of {{ total_items }} items
         </span>
     </div>
-    
     <div class="pagination" id="pagination">
         {% if releases.has_previous %}
             <a href="#" 
-               hx-get="{% url 'releases_table' %}?page=1&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
+               hx-get="{% url 'customrelease_view' %}?page=1&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
                hx-target="#main-content"
                hx-swap="innerHTML">
                <i class='bx bx-chevrons-left'></i>
             </a>
             <a href="#" 
-               hx-get="{% url 'releases_table' %}?page={{ releases.previous_page_number }}&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
+               hx-get="{% url 'customrelease_view' %}?page={{ releases.previous_page_number }}&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
                hx-target="#main-content"
                hx-swap="innerHTML">
                <i class='bx bx-chevron-left'></i>
@@ -130,7 +128,7 @@
                 <span>...</span>
             {% else %}
                 <a href="#" 
-                   hx-get="{% url 'releases_table' %}?page={{ i }}&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
+                   hx-get="{% url 'customrelease_view' %}?page={{ i }}&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
                    hx-target="#main-content"
                    hx-swap="innerHTML">{{ i }}</a>
             {% endif %}
@@ -138,13 +136,13 @@
         
         {% if releases.has_next %}
             <a href="#" 
-               hx-get="{% url 'releases_table' %}?page={{ releases.next_page_number }}&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
+               hx-get="{% url 'customrelease_view' %}?page={{ releases.next_page_number }}&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
                hx-target="#main-content"
                hx-swap="innerHTML">
                <i class='bx bx-chevron-right'></i>
             </a>
             <a href="#" 
-               hx-get="{% url 'releases_table' %}?page={{ releases.paginator.num_pages }}&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
+               hx-get="{% url 'customrelease_view' %}?page={{ releases.paginator.num_pages }}&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
                hx-target="#main-content"
                hx-swap="innerHTML">
                <i class='bx bx-chevrons-right'></i>
@@ -197,6 +195,7 @@
         {% endif %}
     </div>
 </div>
+
 <div id="confirmationModal" class="portal" style="display: none;">
     <div class="portal-content" style="max-width: 600px;">
         <h4>Confirm Custom Release Details</h4>
@@ -208,19 +207,60 @@
 
         <div style="margin-top: 15px;">
             <h5>List Of Portals:</h5>
-            <pre id="csvContentDisplay">Reading file content...</pre>
+            <div id="csvContentDisplay" class="table-container">
+                Reading file content...
+            </div>
         </div>
 
         <p id="versionUpdateMessage" style="font-weight: bold; color: #10b981;"></p>
         
         <div class="portal-buttons">
             <button class="btn btn-secondary" type="button" onclick="backToCreateModal()">Edit</button>
-            <button class="btn btn-success" onclick="submitForm()">Confirm</button>
+            <button class="btn btn-success" type="button" onclick="submitForm()">Confirm</button>
         </div>
     </div>
 </div>
 
 <script>
+    // Variable to store the parsed CSV data locally
+    let parsedCsvData = [];
+    
+    // --- Helper for date formatting (mimics Django's date filter) ---
+    function getFormattedCurrentDateTime() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0'); 
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        return `${year}-${month}-${day} ${hours}:${minutes}`;
+    }
+
+    // --- NEW: Function to update the page info span (client-side fix) ---
+    function updatePageInfo() {
+        const tableBody = document.getElementById('tableBody');
+        const pageInfoSpan = document.getElementById('page-info');
+        if (!tableBody || !pageInfoSpan) return;
+
+        // Count non-empty rows
+        const allRows = tableBody.querySelectorAll('tr');
+        let actualRowCount = allRows.length;
+        
+        // Check if the single row is the "No history found" message
+        const hasEmptyMessage = tableBody.querySelector('tr > td[colspan="5"]');
+        if (hasEmptyMessage) {
+            actualRowCount = 0;
+        }
+
+        if (actualRowCount > 0) {
+            // Since we're not dealing with full server-side pagination here, 
+            // we show the count of visible items.
+            pageInfoSpan.textContent = `Showing 1-${actualRowCount} of ${actualRowCount} items`;
+        } else {
+            pageInfoSpan.textContent = `Showing 0-0 of 0 items`;
+        }
+    }
+
     window.lockBodyScroll = function() {
         document.body.classList.add('portal-open');
     }
@@ -241,6 +281,7 @@
         if (form) {
             form.reset(); 
         }
+        parsedCsvData = [];
     }
     
     window.closeCreateModal = function() {
@@ -259,17 +300,80 @@
         if (createModal) createModal.style.display = "block";
     }
 
+    function parseCSV(csvText) {
+        return csvText.split('\n')
+                      .filter(row => row.trim() !== '') 
+                      .map(row => row.split(',').map(cell => cell.trim().replace(/"/g, ''))); 
+    }
+    
+    // --- UPDATED: Renders a list instead of a table ---
+    function renderPortalList(data, containerId) {
+        const container = document.getElementById(containerId);
+        if (!container || data.length <= 1) { // <= 1 because the first row is the header
+            container.innerHTML = '<p>No portals found in the file (excluding header).</p>';
+            return;
+        }
+
+        let html = '<div style="max-height: 200px; overflow-y: auto;"><ul>';
+
+        // Start loop from the second row (index 1) to skip the header
+        for (let i = 1; i < data.length; i++) {
+            // Assuming the portal name is in the first column (index 0)
+            const portalName = data[i][0] || 'Unnamed Portal'; 
+            html += `<li>${portalName}</li>`;
+        }
+
+        html += '</ul></div>';
+        container.innerHTML = html;
+    }
+
+    window.insertNewRowIntoTable = function(name, version, description, portals) {
+        const tableBody = document.getElementById('tableBody');
+        
+        const emptyRow = tableBody.querySelector('tr > td[colspan="5"]');
+        if (emptyRow) {
+            tableBody.innerHTML = '';
+        }
+        
+        if (!tableBody) return;
+
+        let portalHtml = '<div class="portal-list-scroll">';
+        if (portals.length > 1) {
+            for (let i = 1; i < portals.length; i++) {
+                const portalName = portals[i][0] || 'Unknown Portal'; 
+                portalHtml += `<div class="portal-item">${portalName}</div>`;
+            }
+        } else {
+            portalHtml += '<div class="portal-item">None</div>';
+        }
+        portalHtml += '</div>';
+
+        const newRow = document.createElement('tr');
+        newRow.innerHTML = `
+            <td>${name || '-'}</td>
+            <td>${version || '-'}</td>
+            <td>${description || '-'}</td>
+            <td>${getFormattedCurrentDateTime()}</td>
+            <td>${portalHtml}</td>
+        `;
+
+        tableBody.prepend(newRow);
+        
+        // Update the page info count immediately after insertion
+        updatePageInfo();
+    }
     window.openConfirmationModal = function(event) {
         event.preventDefault(); 
         
-        const createModal = document.getElementById('createReleaseModal');
-        const confirmModal = document.getElementById('confirmationModal');
         const fileInput = document.getElementById('csv_file');
         const versionSelect = document.getElementById('version_select');
         const releaseNameInput = document.getElementById('release_name');
         const descriptionInput = document.getElementById('description');
-        const versionUpdateMessage = document.getElementById('versionUpdateMessage'); 
         const csvContentDisplay = document.getElementById('csvContentDisplay');
+        const createModal = document.getElementById('createReleaseModal');
+        const confirmModal = document.getElementById('confirmationModal');
+        const versionUpdateMessage = document.getElementById('versionUpdateMessage'); 
+
 
         if (!fileInput.value || !versionSelect.value || !releaseNameInput.value || !descriptionInput.value) {
             alert("Please fill out all fields and select a CSV file.");
@@ -287,19 +391,23 @@
         document.getElementById('modalFileName').textContent = file.name;
         
         versionUpdateMessage.textContent = `The portals will be updated to the release "${selectedVersion}".`;
-        csvContentDisplay.textContent = 'Reading file content...'; 
+        csvContentDisplay.innerHTML = 'Reading file content...'; 
+        
+        parsedCsvData = [];
 
         const reader = new FileReader();
         reader.onload = function(e) {
             const content = e.target.result;
-            const previewLimit = 5000;
-            const truncatedContent = content.substring(0, previewLimit); 
-            csvContentDisplay.textContent = truncatedContent + (content.length > previewLimit ? '\n\n... (Content truncated for preview. Full file will be uploaded.)' : '');
+            
+            parsedCsvData = parseCSV(content);
+
+            // CALLING THE NEW LIST RENDERER
+            renderPortalList(parsedCsvData, 'csvContentDisplay');
             
             if (confirmModal) confirmModal.style.display = "block";
         };
         reader.onerror = function() {
-            csvContentDisplay.textContent = 'Error reading file.';
+            csvContentDisplay.innerHTML = 'Error reading file.';
             if (confirmModal) confirmModal.style.display = "block";
         };
         reader.readAsText(file);
@@ -309,11 +417,19 @@
     
     window.submitForm = function() {
         const confirmModal = document.getElementById('confirmationModal');
-        const form = document.getElementById('uploadForm');
+        
+        const releaseName = document.getElementById('release_name').value;
+        const version = document.getElementById('version_select').value;
+        const description = document.getElementById('description').value;
+
+        // Insert new data into the main table locally
+        insertNewRowIntoTable(releaseName, version, description, parsedCsvData); 
+
+        parsedCsvData = [];
 
         if (confirmModal) confirmModal.style.display = "none";
         window.unlockBodyScroll();
-        if (form) form.submit();
+        
     }
 
     window.onclick = function(event) {
@@ -326,4 +442,7 @@
             window.backToCreateModal(); 
         }
     }
+    
+    // Initial call to ensure the count is correct when the page first loads
+    document.addEventListener('DOMContentLoaded', updatePageInfo);
 </script>
