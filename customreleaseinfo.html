@@ -1,0 +1,329 @@
+<div class="table-header">
+    <h2>Custom Release History</h2>
+    
+    <div class="filters">
+        <div class="filter-group search-box">
+            <input type="text" 
+                   name="search" 
+                   value="{{ search_query }}" 
+                   placeholder="Search by release name..."
+                   hx-get="{% url 'releases_table' %}"
+                   hx-trigger="keyup changed delay:1000ms, search"
+                   hx-target="#main-content"
+                   hx-swap="innerHTML"
+                   autocomplete="off">
+        </div>
+    </div>
+</div>
+<div class="table-container">
+    <table class="table" id="dataTable">
+        <thead>
+            <tr>
+                <th hx-get="{% url 'releases_table' %}?search={{ search_query }}&sort={% if current_sort == 'custom_release_name' %}-custom_release_name{% else %}custom_release_name{% endif %}"
+                    hx-target="#main-content"
+                    hx-swap="innerHTML">
+                    Custom Release Name
+                    {% if current_sort == 'custom_release_name' %}
+                        <i class='bx bx-up-arrow-alt'></i>
+                    {% elif current_sort == '-custom_release_name' %}
+                        <i class='bx bx-down-arrow-alt'></i>
+                    {% endif %}
+                </th>
+                
+                <th hx-get="{% url 'releases_table' %}?search={{ search_query }}&sort={% if current_sort == 'release_version' %}-release_version{% else %}release_version{% endif %}"
+                    hx-target="#main-content"
+                    hx-swap="innerHTML">
+                    Release Version
+                    {% if current_sort == 'release_version' %}
+                        <i class='bx bx-up-arrow-alt'></i>
+                    {% elif current_sort == '-release_version' %}
+                        <i class='bx bx-down-arrow-alt'></i>
+                    {% endif %}
+                </th>
+
+                <th>Description</th>
+                
+                <th hx-get="{% url 'releases_table' %}?search={{ search_query }}&sort={% if current_sort == 'release_date' %}-release_date{% else %}release_date{% endif %}"
+                    hx-target="#main-content"
+                    hx-swap="innerHTML">
+                    Date
+                    {% if current_sort == 'release_date' %}
+                        <i class='bx bx-up-arrow-alt'></i>
+                    {% elif current_sort == '-release_date' %}
+                        <i class='bx bx-down-arrow-alt'></i>
+                    {% endif %}
+                </th>
+                
+                <th>List of Portals</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% if releases %}
+                {% for release in releases %}
+                    <tr>
+                        <td>{{ release.custom_release_name|default:"-" }}</td>
+                        <td>{{ release.release_version|default:"-" }}</td>
+                        <td>{{ release.description|default:"-" }}</td>
+                        <td>{{ release.date|date:"Y-m-d H:i"|default:"-" }}</td>
+                        
+                        <td>
+                            <div class="portal-list-scroll">
+                                {% for portal in release.portals %}
+                                    <div class="portal-item">{{ portal.name }}</div>
+                                {% empty %}
+                                    <div class="portal-item">None</div>
+                                {% endfor %}
+                            </div>
+                        </td>
+                    </tr>
+                {% endfor %}
+            {% else %}
+                <tr>
+                    <td colspan="5">No custom release history found.</td>
+                </tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+
+<div class="table-footer">
+    <div class="rows-per-page">
+        <span>Rows per page:</span>
+        <select id="rows-per-page" 
+                hx-get="{% url 'releases_table' %}" 
+                hx-target="#main-content" 
+                hx-swap="innerHTML" 
+                hx-include="[name='search'],[name='sort']"
+                name="rows">
+            <option value="10" {% if rows_per_page == 10 %}selected{% endif %}>10</option>
+            <option value="20" {% if rows_per_page == 20 %}selected{% endif %}>20</option>
+            <option value="50" {% if rows_per_page == 50 %}selected{% endif %}>50</option>
+        </select>
+    </div>
+    
+    <div class="page-info">
+        <span id="page-info">
+            Showing {{ start_item }}-{{ end_item }} of {{ total_items }} items
+        </span>
+    </div>
+    
+    <div class="pagination" id="pagination">
+        {% if releases.has_previous %}
+            <a href="#" 
+               hx-get="{% url 'releases_table' %}?page=1&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
+               hx-target="#main-content"
+               hx-swap="innerHTML">
+               <i class='bx bx-chevrons-left'></i>
+            </a>
+            <a href="#" 
+               hx-get="{% url 'releases_table' %}?page={{ releases.previous_page_number }}&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
+               hx-target="#main-content"
+               hx-swap="innerHTML">
+               <i class='bx bx-chevron-left'></i>
+            </a>
+        {% endif %}
+        
+        {% for i in page_range %}
+            {% if i == releases.number %}
+                <a href="#" class="active">{{ i }}</a>
+            {% elif i == "..." %}
+                <span>...</span>
+            {% else %}
+                <a href="#" 
+                   hx-get="{% url 'releases_table' %}?page={{ i }}&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
+                   hx-target="#main-content"
+                   hx-swap="innerHTML">{{ i }}</a>
+            {% endif %}
+        {% endfor %}
+        
+        {% if releases.has_next %}
+            <a href="#" 
+               hx-get="{% url 'releases_table' %}?page={{ releases.next_page_number }}&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
+               hx-target="#main-content"
+               hx-swap="innerHTML">
+               <i class='bx bx-chevron-right'></i>
+            </a>
+            <a href="#" 
+               hx-get="{% url 'releases_table' %}?page={{ releases.paginator.num_pages }}&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
+               hx-target="#main-content"
+               hx-swap="innerHTML">
+               <i class='bx bx-chevrons-right'></i>
+            </a>
+        {% endif %}
+    </div>
+</div>
+<div class="create-release-container" style="text-align: center; margin-top: 15px;">
+    <button class="btn btn-primary create-release-btn" onclick="openCreateReleaseModal()" style="">
+        Create Custom Release
+    </button>
+</div>
+
+<input type="hidden" name="sort" value="{{ current_sort }}">
+
+<div id="createReleaseModal" class="portal" style="display: none;">
+    <div class="portal-content" style="max-width: 500px;">
+        <h3>Upload Custom Release Configuration</h3>
+        
+        <form id="uploadForm" method="POST" enctype="multipart/form-data" onsubmit="return openConfirmationModal(event);">
+            {% csrf_token %}
+            
+            <label for="release_name">Custom Release Name:</label>
+            <input type="text" name="release_name" id="release_name" required><br><br>
+        
+            <label for="description">Description:</label><br>
+            <input type="text" name="description" id="description" required><br><br>
+        
+            <label for="version">Select Release Version:</label>
+            <select name="version" id="version_select" required>
+                <option value="">-- Select Version --</option>
+                <option value="v1.0">v1.0</option>
+                <option value="v2.0">v2.0</option>
+                <option value="v3.0">v3.0</option>
+            </select><br><br>
+            
+            <label for="csv_file">CSV File (List of Portals):</label>
+            <input type="file" name="csv_file" id="csv_file" accept=".csv" required><br><br>
+        
+            <div class="portal-buttons">
+                <button class="btn btn-secondary" 
+                        type="button" 
+                        onclick="closeCreateModal()">Cancel</button>
+                <button class="btn btn-success" type="submit">Update</button>
+            </div>
+        </form>
+
+        {% if message %}
+            <p style="color: green;">{{ message }}</p>
+        {% endif %}
+    </div>
+</div>
+<div id="confirmationModal" class="portal" style="display: none;">
+    <div class="portal-content" style="max-width: 600px;">
+        <h4>Confirm Custom Release Details</h4>
+        
+        <p><strong>Custom Release Name:</strong> <span id="modalReleaseName"></span></p>
+        <p><strong>Release Version:</strong> <span id="modalVersion"></span></p>
+        <p><strong>Description:</strong> <span id="modalDescription"></span></p>
+        <p><strong>CSV Filename:</strong> <span id="modalFileName"></span></p>
+
+        <div style="margin-top: 15px;">
+            <h5>List Of Portals:</h5>
+            <pre id="csvContentDisplay">Reading file content...</pre>
+        </div>
+
+        <p id="versionUpdateMessage" style="font-weight: bold; color: #10b981;"></p>
+        
+        <div class="portal-buttons">
+            <button class="btn btn-secondary" type="button" onclick="backToCreateModal()">Edit</button>
+            <button class="btn btn-success" onclick="submitForm()">Confirm</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    window.lockBodyScroll = function() {
+        document.body.classList.add('portal-open');
+    }
+
+    window.unlockBodyScroll = function() {
+        document.body.classList.remove('portal-open');
+    }
+
+    window.openCreateReleaseModal = function() {
+        const createModal = document.getElementById('createReleaseModal');
+        const form = document.getElementById('uploadForm');
+
+        if (createModal) {
+            createModal.style.display = "block";
+            window.lockBodyScroll(); 
+        }
+        
+        if (form) {
+            form.reset(); 
+        }
+    }
+    
+    window.closeCreateModal = function() {
+        const createModal = document.getElementById('createReleaseModal');
+        if (createModal) {
+            createModal.style.display = "none";
+            window.unlockBodyScroll(); 
+        }
+    }
+
+    window.backToCreateModal = function() {
+        const confirmModal = document.getElementById('confirmationModal');
+        const createModal = document.getElementById('createReleaseModal');
+
+        if (confirmModal) confirmModal.style.display = "none";
+        if (createModal) createModal.style.display = "block";
+    }
+
+    window.openConfirmationModal = function(event) {
+        event.preventDefault(); 
+        
+        const createModal = document.getElementById('createReleaseModal');
+        const confirmModal = document.getElementById('confirmationModal');
+        const fileInput = document.getElementById('csv_file');
+        const versionSelect = document.getElementById('version_select');
+        const releaseNameInput = document.getElementById('release_name');
+        const descriptionInput = document.getElementById('description');
+        const versionUpdateMessage = document.getElementById('versionUpdateMessage'); 
+        const csvContentDisplay = document.getElementById('csvContentDisplay');
+
+        if (!fileInput.value || !versionSelect.value || !releaseNameInput.value || !descriptionInput.value) {
+            alert("Please fill out all fields and select a CSV file.");
+            return false;
+        }
+
+        if (createModal) createModal.style.display = "none"; 
+
+        const file = fileInput.files[0];
+        const selectedVersion = versionSelect.value; 
+
+        document.getElementById('modalReleaseName').textContent = releaseNameInput.value;
+        document.getElementById('modalVersion').textContent = selectedVersion;
+        document.getElementById('modalDescription').textContent = descriptionInput.value;
+        document.getElementById('modalFileName').textContent = file.name;
+        
+        versionUpdateMessage.textContent = `The portals will be updated to the release "${selectedVersion}".`;
+        csvContentDisplay.textContent = 'Reading file content...'; 
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const content = e.target.result;
+            const previewLimit = 5000;
+            const truncatedContent = content.substring(0, previewLimit); 
+            csvContentDisplay.textContent = truncatedContent + (content.length > previewLimit ? '\n\n... (Content truncated for preview. Full file will be uploaded.)' : '');
+            
+            if (confirmModal) confirmModal.style.display = "block";
+        };
+        reader.onerror = function() {
+            csvContentDisplay.textContent = 'Error reading file.';
+            if (confirmModal) confirmModal.style.display = "block";
+        };
+        reader.readAsText(file);
+        
+        return false;
+    }
+    
+    window.submitForm = function() {
+        const confirmModal = document.getElementById('confirmationModal');
+        const form = document.getElementById('uploadForm');
+
+        if (confirmModal) confirmModal.style.display = "none";
+        window.unlockBodyScroll();
+        if (form) form.submit();
+    }
+
+    window.onclick = function(event) {
+        const createModal = document.getElementById('createReleaseModal'); 
+        const confirmModal = document.getElementById('confirmationModal');
+
+        if (event.target === createModal) { 
+            window.closeCreateModal();
+        } else if (event.target === confirmModal) {
+            window.backToCreateModal(); 
+        }
+    }
+</script>
