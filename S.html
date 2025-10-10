@@ -59,8 +59,8 @@
             </tr>
         </thead>
         <tbody id="tableBody" style="height: 70px;">
-            {% if releases %}
-                {% for release in releases %}
+            {% if custom_releases %}
+                {% for release in custom_releases %}
                     <tr>
                         <td>{{ release.custom_release_name|default:"-" }}</td>
                         <td>{{ release.release_version|default:"-" }}</td>
@@ -70,7 +70,8 @@
                         <td>
                             <div class="portal-list-scroll">
                                 {% for portal in release.portals.all %}
-                                    <div class="portal-item">{{ portal.portal_name }}</div>
+                                    {# Apply linebreaksbr to convert stored \n to <br> tags #}
+                                    {{ portal.portal_name|linebreaksbr }}
                                 {% empty %}
                                     <div class="portal-item">None</div>
                                 {% endfor %}
@@ -87,7 +88,7 @@
     </table>
 </div>
 
-<div class="table-footer">
+<div class="table-footer" style="display: flex; justify-content: space-between; align-items: center;">
     <div class="rows-per-page">
         <span>Rows per page:</span>
         <select id="rows-per-page" 
@@ -102,14 +103,14 @@
         </select>
     </div>
     
-    <div class="page-info">
+    <div class="page-info" style="flex-grow: 1; text-align: center; margin-left: 235px;">
         <span id="page-info">
             Showing {{ start_item }}-{{ end_item }} of {{ total_items }} items
         </span>
     </div>
     
     <div class="pagination" id="pagination">
-        {% if releases.has_previous %}
+        {% if custom_releases.has_previous %}
             <a href="#" 
                hx-get="{% url 'customrelease_view' %}?page=1&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
                hx-target="#main-content"
@@ -117,7 +118,7 @@
                <i class='bx bx-chevrons-left'></i>
             </a>
             <a href="#" 
-               hx-get="{% url 'customrelease_view' %}?page={{ releases.previous_page_number }}&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
+               hx-get="{% url 'customrelease_view' %}?page={{ custom_releases.previous_page_number }}&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
                hx-target="#main-content"
                hx-swap="innerHTML">
                <i class='bx bx-chevron-left'></i>
@@ -125,7 +126,7 @@
         {% endif %}
         
         {% for i in page_range %}
-            {% if i == releases.number %}
+            {% if i == custom_releases.number %}
                 <a href="#" class="active">{{ i }}</a>
             {% elif i == "..." %}
                 <span>...</span>
@@ -137,15 +138,15 @@
             {% endif %}
         {% endfor %}
         
-        {% if releases.has_next %}
+        {% if custom_releases.has_next %}
             <a href="#" 
-               hx-get="{% url 'customrelease_view' %}?page={{ releases.next_page_number }}&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
+               hx-get="{% url 'customrelease_view' %}?page={{ custom_releases.next_page_number }}&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
                hx-target="#main-content"
                hx-swap="innerHTML">
                <i class='bx bx-chevron-right'></i>
             </a>
             <a href="#" 
-               hx-get="{% url 'customrelease_view' %}?page={{ releases.paginator.num_pages }}&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
+               hx-get="{% url 'customrelease_view' %}?page={{ custom_releases.paginator.num_pages }}&search={{ search_query }}&sort={{ current_sort }}&rows={{ rows_per_page }}"
                hx-target="#main-content"
                hx-swap="innerHTML">
                <i class='bx bx-chevrons-right'></i>
@@ -258,17 +259,24 @@
                       .map(row => row.split(',').map(c => c.trim().replace(/"/g, '')));
     }
 
-    function renderTable(data, containerId) {
+    function renderList(data, containerId) {
         const container = document.getElementById(containerId);
-        if (!data.length) {
-            container.innerHTML = '<p>No data to display.</p>';
+        
+        if (!data.length || (data.length === 1 && data[0].length === 1 && data[0][0] === '')) {
+            container.innerHTML = '<p>No portals found in the file.</p>';
             return;
         }
-        let html = '<div style="max-height:200px;overflow-y:auto;"><table class="table">';
-        html += '<thead><tr>' + data[0].map(h => `<th>${h}</th>`).join('') + '</tr></thead>';
-        html += '<tbody>';
-        for (let i=1;i<data.length;i++) html += '<tr>' + data[i].map(c=>`<td>${c||'-'}</td>`).join('') + '</tr>';
-        html += '</tbody></table></div>';
+
+        let html = '<div style="max-height:200px;overflow-y:auto;"><ul>';
+
+        for (let i = 0; i < data.length; i++) {
+            const listItemContent = data[i].join(', '); 
+            if (listItemContent.trim() !== '') { 
+                 html += `<li>${listItemContent}</li>`;
+            }
+        }
+
+        html += '</ul></div>';
         container.innerHTML = html;
     }
 
@@ -286,18 +294,21 @@
         }
 
         document.getElementById('createReleaseModal').style.display = "none"; 
-        const file = fileInput.files[0];
+        const file = fileInput.files[0];       
+        const selectedOption = versionSelect.options[versionSelect.selectedIndex];       
+        const selectedVersionName = selectedOption.text;
+        const selectedVersionId = versionSelect.value;
         document.getElementById('modalReleaseName').textContent = releaseName.value;
-        document.getElementById('modalVersion').textContent = versionSelect.value;
+        document.getElementById('modalVersion').textContent = selectedVersionName; 
         document.getElementById('modalDescription').textContent = description.value;
         document.getElementById('modalFileName').textContent = file.name;
-        document.getElementById('versionUpdateMessage').textContent = `The portals will be updated to the release "${versionSelect.value}".`;
+        document.getElementById('versionUpdateMessage').textContent = `This release is based on the selected version: "${selectedVersionName}".`;
         document.getElementById('csvContentDisplay').innerHTML = 'Reading file content...'; 
         
         const reader = new FileReader();
         reader.onload = function(e) {
             parsedCsvData = parseCSV(e.target.result);
-            renderTable(parsedCsvData, 'csvContentDisplay');
+            renderList(parsedCsvData, 'csvContentDisplay'); 
             document.getElementById('confirmationModal').style.display = "block";
         };
         reader.onerror = () => {
@@ -326,11 +337,9 @@
             document.querySelector("#main-content").innerHTML = html;
             confirmModal.style.display = "none";
             window.unlockBodyScroll();
-            alert("Custom release successfully uploaded!");
         })
         .catch(err => {
             console.error(err);
-            alert("Error uploading release.");
         });
     }
 
