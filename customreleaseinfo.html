@@ -57,7 +57,7 @@
                 <th>Portals</th>
             </tr>
         </thead>
-        <tbody id="tableBody">
+        <tbody id="tableBody" style="height: 70px;">
             {% if releases %}
                 {% for release in releases %}
                     <tr>
@@ -68,8 +68,8 @@
                         
                         <td>
                             <div class="portal-list-scroll">
-                                {% for portal in release.portals %}
-                                    <div class="portal-item">{{ portal.name }}</div>
+                                {% for portal in release.portals.all %}
+                                    <div class="portal-item">{{ portal.portal_name }}</div>
                                 {% empty %}
                                     <div class="portal-item">None</div>
                                 {% endfor %}
@@ -100,11 +100,13 @@
             <option value="50" {% if rows_per_page == 50 %}selected{% endif %}>50</option>
         </select>
     </div>
+    
     <div class="page-info">
         <span id="page-info">
             Showing {{ start_item }}-{{ end_item }} of {{ total_items }} items
         </span>
     </div>
+    
     <div class="pagination" id="pagination">
         {% if releases.has_previous %}
             <a href="#" 
@@ -161,32 +163,30 @@
 <div id="createReleaseModal" class="portal" style="display: none;">
     <div class="portal-content" style="max-width: 500px;">
         <h3>Upload Custom Release Configuration</h3>
-        
-        <form id="uploadForm" method="POST" enctype="multipart/form-data" onsubmit="return openConfirmationModal(event);">
+
+        <form id="uploadForm" method="POST" enctype="multipart/form-data" action="{% url 'upload_custom_release' %}">
             {% csrf_token %}
             
             <label for="release_name">Custom Release Name:</label>
             <input type="text" name="release_name" id="release_name" required><br><br>
-        
+
             <label for="description">Description:</label><br>
             <input type="text" name="description" id="description" required><br><br>
-        
-            <label for="version">Select Release Version:</label>
+
+            <label for="version">Select Release:</label>
             <select name="version" id="version_select" required>
-                <option value="">-- Select Version --</option>
-                <option value="v1.0">v1.0</option>
-                <option value="v2.0">v2.0</option>
-                <option value="v3.0">v3.0</option>
+                <option value="">-- Select Release --</option>
+                {% for rel in release_versions %}
+                    <option value="{{ rel.id }}">{{ rel.release_name }}</option>
+                {% endfor %}
             </select><br><br>
-            
+
             <label for="csv_file">CSV File (List of Portals):</label>
             <input type="file" name="csv_file" id="csv_file" accept=".csv" required><br><br>
-        
+
             <div class="portal-buttons">
-                <button class="btn btn-secondary" 
-                        type="button" 
-                        onclick="closeCreateModal()">Cancel</button>
-                <button class="btn btn-success" type="submit">Update</button>
+                <button class="btn btn-secondary" type="button" onclick="closeCreateModal()">Cancel</button>
+                <button class="btn btn-success" type="submit">Upload</button>
             </div>
         </form>
 
@@ -229,6 +229,7 @@
     function getFormattedCurrentDateTime() {
         const now = new Date();
         const year = now.getFullYear();
+        // Month is 0-indexed, so add 1
         const month = String(now.getMonth() + 1).padStart(2, '0'); 
         const day = String(now.getDate()).padStart(2, '0');
         const hours = String(now.getHours()).padStart(2, '0');
@@ -236,30 +237,6 @@
         return `${year}-${month}-${day} ${hours}:${minutes}`;
     }
 
-    // --- NEW: Function to update the page info span (client-side fix) ---
-    function updatePageInfo() {
-        const tableBody = document.getElementById('tableBody');
-        const pageInfoSpan = document.getElementById('page-info');
-        if (!tableBody || !pageInfoSpan) return;
-
-        // Count non-empty rows
-        const allRows = tableBody.querySelectorAll('tr');
-        let actualRowCount = allRows.length;
-        
-        // Check if the single row is the "No history found" message
-        const hasEmptyMessage = tableBody.querySelector('tr > td[colspan="5"]');
-        if (hasEmptyMessage) {
-            actualRowCount = 0;
-        }
-
-        if (actualRowCount > 0) {
-            // Since we're not dealing with full server-side pagination here, 
-            // we show the count of visible items.
-            pageInfoSpan.textContent = `Showing 1-${actualRowCount} of ${actualRowCount} items`;
-        } else {
-            pageInfoSpan.textContent = `Showing 0-0 of 0 items`;
-        }
-    }
 
     window.lockBodyScroll = function() {
         document.body.classList.add('portal-open');
@@ -281,6 +258,7 @@
         if (form) {
             form.reset(); 
         }
+        // Clear any previous locally stored data
         parsedCsvData = [];
     }
     
@@ -303,27 +281,34 @@
     function parseCSV(csvText) {
         return csvText.split('\n')
                       .filter(row => row.trim() !== '') 
-                      .map(row => row.split(',').map(cell => cell.trim().replace(/"/g, ''))); 
+                      .map(row => row.split(',').map(cell => cell.trim().replace(/"/g, ''))); // Basic splitting and cleanup
     }
     
-    // --- UPDATED: Renders a list instead of a table ---
-    function renderPortalList(data, containerId) {
+    function renderTable(data, containerId) {
         const container = document.getElementById(containerId);
-        if (!container || data.length <= 1) { // <= 1 because the first row is the header
-            container.innerHTML = '<p>No portals found in the file (excluding header).</p>';
+        if (!container || data.length === 0) {
+            container.innerHTML = '<p>No data to display or file is empty.</p>';
             return;
         }
 
-        let html = '<div style="max-height: 200px; overflow-y: auto;"><ul>';
+        let html = '<div style="max-height: 200px; overflow-y: auto;"><table class="table">';
 
-        // Start loop from the second row (index 1) to skip the header
+        html += '<thead><tr>';
+        data[0].forEach(header => {
+            html += `<th>${header}</th>`;
+        });
+        html += '</tr></thead>';
+
+        html += '<tbody>';
         for (let i = 1; i < data.length; i++) {
-            // Assuming the portal name is in the first column (index 0)
-            const portalName = data[i][0] || 'Unnamed Portal'; 
-            html += `<li>${portalName}</li>`;
+            html += '<tr>';
+            data[i].forEach(cell => {
+                html += `<td>${cell || '-'}</td>`;
+            });
+            html += '</tr>';
         }
 
-        html += '</ul></div>';
+        html += '</tbody></table></div>';
         container.innerHTML = html;
     }
 
@@ -358,9 +343,6 @@
         `;
 
         tableBody.prepend(newRow);
-        
-        // Update the page info count immediately after insertion
-        updatePageInfo();
     }
     window.openConfirmationModal = function(event) {
         event.preventDefault(); 
@@ -401,8 +383,7 @@
             
             parsedCsvData = parseCSV(content);
 
-            // CALLING THE NEW LIST RENDERER
-            renderPortalList(parsedCsvData, 'csvContentDisplay');
+            renderTable(parsedCsvData, 'csvContentDisplay');
             
             if (confirmModal) confirmModal.style.display = "block";
         };
@@ -422,7 +403,6 @@
         const version = document.getElementById('version_select').value;
         const description = document.getElementById('description').value;
 
-        // Insert new data into the main table locally
         insertNewRowIntoTable(releaseName, version, description, parsedCsvData); 
 
         parsedCsvData = [];
@@ -442,7 +422,4 @@
             window.backToCreateModal(); 
         }
     }
-    
-    // Initial call to ensure the count is correct when the page first loads
-    document.addEventListener('DOMContentLoaded', updatePageInfo);
 </script>
