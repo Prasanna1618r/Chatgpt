@@ -56,12 +56,14 @@
                 </th>
                 
                 <th>Portals</th>
+
+                <th>Enabled</th>
             </tr>
         </thead>
         <tbody id="tableBody" style="height: 70px;">
             {% if custom_releases %}
                 {% for release in custom_releases %}
-                    <tr>
+                    <tr class="{% if not release.enabled %}disabled-row{% endif %}">
                         <td>{{ release.custom_release_name|default:"-" }}</td>
                         <td>{{ release.release_version|default:"-" }}</td>
                         <td>{{ release.description|default:"-" }}</td>
@@ -76,6 +78,17 @@
                                     <div class="portal-item">None</div>
                                 {% endfor %}
                             </div>
+                        </td>
+                        <td style="text-align:center;">
+                            <label class="switch">
+                                <input type="checkbox"
+                                        {% if release.enabled %}checked{% endif %}
+                                        hx-post="{% url 'toggle_customrelease_enabled' release.id %}"
+                                        hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                                        hx-swap="none"
+                                        onchange="handleHtmxToggle(this)">
+                                <span class="slider"></span>
+                            </label>
                         </td>
                     </tr>
                 {% endfor %}
@@ -348,5 +361,27 @@
         const confirmModal = document.getElementById('confirmationModal');
         if (event.target === createModal) window.closeCreateModal();
         if (event.target === confirmModal) window.backToCreateModal();
+    }
+    function handleHtmxToggle(checkbox) {
+        const action = checkbox.checked ? "enable" : "disable";
+        if (!confirm(`Are you sure you want to ${action} this release?`)) {
+            checkbox.checked = !checkbox.checked;
+            return false;
+        }
+        const row = checkbox.closest('tr');
+        checkbox.addEventListener('htmx:afterRequest', function (evt) {
+            const xhr = evt.detail.xhr;
+            if (xhr.status === 200) {
+                const data = JSON.parse(xhr.responseText);
+                if (data.enabled) {
+                    row.classList.remove('disabled-row');
+                } else {
+                    row.classList.add('disabled-row');
+                }
+            } else {
+                alert('Failed to update status.');
+                checkbox.checked = !checkbox.checked;
+            }
+        }, { once: true });
     }
 </script>
