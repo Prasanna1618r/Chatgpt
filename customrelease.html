@@ -16,7 +16,7 @@
     </div>
 </div>
 
-<div class="table-container" hx-push-url="true">
+<div class="table-container">
     <table class="table" id="dataTable">
         <thead>
             <tr>
@@ -81,11 +81,11 @@
                         <td style="text-align:center;">
                             <label class="switch">
                                 <input type="checkbox"
-                                       {% if release.enabled %}checked{% endif %}
-                                       hx-post="{% url 'toggle_customrelease_enabled' release.id %}/"
-                                       hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-                                       hx-swap="none"
-                                       class="enabled-toggle">
+                                        {% if release.enabled %}checked{% endif %}
+                                        hx-post="{% url 'toggle_customrelease_enabled' release.id %}/"
+                                        hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                                        hx-swap="none"
+                                        hx-trigger="confirmToggleEvent" onchange="handleHtmxToggle(this)">
                                 <span class="slider"></span>
                             </label>
                         </td>
@@ -93,7 +93,7 @@
                 {% endfor %}
             {% else %}
                 <tr>
-                    <td colspan="6">No custom release history found.</td>
+                    <td colspan="5">No custom release history found.</td>
                 </tr>
             {% endif %}
         </tbody>
@@ -175,7 +175,7 @@
 
 <input type="hidden" name="sort" value="{{ current_sort }}">
 
-<!-- Upload Modal -->
+<!-- Create Release Modal -->
 <div id="createReleaseModal" class="portal" style="display: none;">
     <div class="portal-content" style="max-width: 500px;">
         <h3>Upload Custom Release Configuration</h3>
@@ -251,16 +251,22 @@
 
 <script>
 let parsedCsvData = [];
+let currentToggleCheckbox = null;
 
-// Body scroll lock/unlock
+function getFormattedCurrentDateTime() {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+}
+
 window.lockBodyScroll = () => document.body.classList.add('portal-open');
 window.unlockBodyScroll = () => document.body.classList.remove('portal-open');
 
-// --- Upload Modal ---
+// ---- Create Release Modal ----
 window.openCreateReleaseModal = function() {
+    const modal = document.getElementById('createReleaseModal');
     document.getElementById('uploadForm').reset();
     parsedCsvData = [];
-    document.getElementById('createReleaseModal').style.display = "block";
+    modal.style.display = "block";
     window.lockBodyScroll();
 }
 
@@ -274,7 +280,7 @@ window.backToCreateModal = function() {
     document.getElementById('createReleaseModal').style.display = "block";
 }
 
-// --- CSV Parsing ---
+// ---- CSV Parsing & Rendering ----
 function parseCSV(csvText) {
     return csvText.split('\n')
                   .filter(row => row.trim() !== '')
@@ -283,22 +289,29 @@ function parseCSV(csvText) {
 
 function renderList(data, containerId) {
     const container = document.getElementById(containerId);
+    
     if (!data.length || (data.length === 1 && data[0].length === 1 && data[0][0] === '')) {
         container.innerHTML = '<p>No portals found in the file.</p>';
         return;
     }
+
     let html = '<div style="max-height:200px;overflow-y:auto;"><ul>';
+
     for (let i = 0; i < data.length; i++) {
-        const listItemContent = data[i].join(', ');
-        if (listItemContent.trim() !== '') html += `<li>${listItemContent}</li>`;
+        const listItemContent = data[i].join(', '); 
+        if (listItemContent.trim() !== '') { 
+             html += `<li>${listItemContent}</li>`;
+        }
     }
+
     html += '</ul></div>';
     container.innerHTML = html;
 }
 
-// --- Confirmation Modal ---
+// ---- Upload Confirmation Modal ----
 window.openConfirmationModal = function(event) {
-    event.preventDefault();
+    event.preventDefault(); 
+
     const fileInput = document.getElementById('csv_file');
     const versionSelect = document.getElementById('version_select');
     const releaseName = document.getElementById('release_name');
@@ -309,23 +322,22 @@ window.openConfirmationModal = function(event) {
         return false;
     }
 
-    document.getElementById('createReleaseModal').style.display = "none";
-    const file = fileInput.files[0];
-    const selectedOption = versionSelect.options[versionSelect.selectedIndex];
+    document.getElementById('createReleaseModal').style.display = "none"; 
+    const file = fileInput.files[0];       
+    const selectedOption = versionSelect.options[versionSelect.selectedIndex];       
     const selectedVersionName = selectedOption.text;
-
+    const selectedVersionId = versionSelect.value;
     document.getElementById('modalReleaseName').textContent = releaseName.value;
-    document.getElementById('modalVersion').textContent = selectedVersionName;
+    document.getElementById('modalVersion').textContent = selectedVersionName; 
     document.getElementById('modalDescription').textContent = description.value;
     document.getElementById('modalFileName').textContent = file.name;
-    document.getElementById('versionUpdateMessage').textContent =
-        `This release is based on the selected version: "${selectedVersionName}".`;
-    document.getElementById('csvContentDisplay').innerHTML = 'Reading file content...';
-
+    document.getElementById('versionUpdateMessage').textContent = `This release is based on the selected version: "${selectedVersionName}".`;
+    document.getElementById('csvContentDisplay').innerHTML = 'Reading file content...'; 
+    
     const reader = new FileReader();
     reader.onload = function(e) {
         parsedCsvData = parseCSV(e.target.result);
-        renderList(parsedCsvData, 'csvContentDisplay');
+        renderList(parsedCsvData, 'csvContentDisplay'); 
         document.getElementById('confirmationModal').style.display = "block";
     };
     reader.onerror = () => {
@@ -336,68 +348,90 @@ window.openConfirmationModal = function(event) {
     return false;
 }
 
+// ---- Submit Form & Reload Table ----
 window.submitForm = function() {
     const form = document.getElementById('uploadForm');
     const confirmModal = document.getElementById('confirmationModal');
     const formData = new FormData(form);
 
-    fetch(form.action, { method: "POST", body: formData })
-    .then(resp => { if (!resp.ok) throw new Error("Upload failed"); return resp.text(); })
+    fetch(form.action, {
+        method: "POST",
+        body: formData
+    })
+    .then(resp => {
+        if (!resp.ok) throw new Error("Upload failed");
+        return resp.text();
+    })
     .then(html => {
         document.querySelector("#main-content").innerHTML = html;
         confirmModal.style.display = "none";
         window.unlockBodyScroll();
     })
-    .catch(err => console.error(err));
+    .catch(err => {
+        console.error(err);
+        alert("Upload failed.");
+    });
 }
 
-// --- Toggle Enabled ---
-(function() {
-    let currentToggleCheckbox = null;
+// ---- Click Outside Modal to Close ----
+window.onclick = function(event) {
+    const createModal = document.getElementById('createReleaseModal'); 
+    const confirmModal = document.getElementById('confirmationModal');
+    const toggleModal = document.getElementById('toggleConfirmationModal');
+    if (event.target === createModal) window.closeCreateModal();
+    if (event.target === confirmModal) window.backToCreateModal();
+    if (event.target === toggleModal) window.cancelToggle(); 
+}
 
-    function openToggleModal(checkbox) {
-        currentToggleCheckbox = checkbox;
-        const action = checkbox.checked ? "enable" : "disable";
-        document.getElementById('toggleConfirmationMessage').innerHTML =
-            `Are you sure you want to <strong>${action}</strong> this release?`;
-        document.getElementById('toggleConfirmationModal').style.display = "block";
-        window.lockBodyScroll();
+// ---- Toggle Confirmation ----
+window.handleHtmxToggle = function(checkbox) {
+    currentToggleCheckbox = checkbox; 
+    const action = checkbox.checked ? "enable" : "disable";
+    const message = `Are you sure you want to <strong>${action}</strong> this release?`; 
+
+    document.getElementById('toggleConfirmationMessage').innerHTML = message;
+    document.getElementById('toggleConfirmationModal').style.display = "block";
+    window.lockBodyScroll();
+}
+
+window.confirmToggle = function() {
+    const checkbox = currentToggleCheckbox;
+    document.getElementById('toggleConfirmationModal').style.display = "none";
+    window.unlockBodyScroll();
+
+    htmx.trigger(checkbox, 'confirmToggleEvent');
+    currentToggleCheckbox = null;
+}
+
+window.cancelToggle = function() {
+    if (currentToggleCheckbox) {
+        currentToggleCheckbox.checked = !currentToggleCheckbox.checked; 
     }
+    document.getElementById('toggleConfirmationModal').style.display = "none";
+    window.unlockBodyScroll();
+    currentToggleCheckbox = null;
+}
 
-    window.confirmToggle = function() {
-        const checkbox = currentToggleCheckbox;
-        if (!checkbox) return;
-        const row = checkbox.closest('tr');
+// ---- Global Delegated HTMX Listener for Toggle ----
+document.body.addEventListener('htmx:afterRequest', function(evt) {
+    const target = evt.target;
+    if (!target.matches("input[type=checkbox][hx-post*='toggle_customrelease_enabled']")) return;
 
-        checkbox.addEventListener('htmx:afterRequest', function(evt) {
-            const xhr = evt.detail.xhr;
-            if (xhr.status === 200) {
-                const data = JSON.parse(xhr.responseText);
-                if (data.enabled) { row.classList.remove('disabled-row'); checkbox.checked = true; }
-                else { row.classList.add('disabled-row'); checkbox.checked = false; }
-            } else { alert('Failed to update status.'); checkbox.checked = !checkbox.checked; }
-        }, { once: true });
+    const row = target.closest('tr');
+    const xhr = evt.detail.xhr;
 
-        htmx.trigger(checkbox, 'confirmToggleEvent');
-        window.cancelToggle();
+    if (xhr.status === 200) {
+        const data = JSON.parse(xhr.responseText);
+        if (data.enabled) {
+            row.classList.remove('disabled-row');
+            target.checked = true;
+        } else {
+            row.classList.add('disabled-row');
+            target.checked = false;
+        }
+    } else {
+        alert('Failed to update status.');
+        target.checked = !target.checked;
     }
-
-    window.cancelToggle = function() {
-        if (currentToggleCheckbox) currentToggleCheckbox.checked = !currentToggleCheckbox.checked;
-        document.getElementById('toggleConfirmationModal').style.display = "none";
-        window.unlockBodyScroll();
-        currentToggleCheckbox = null;
-    }
-
-    // Global delegation
-    document.addEventListener('change', function(e) {
-        if (e.target.classList.contains('enabled-toggle')) openToggleModal(e.target);
-    });
-
-    // Close modal if clicking outside
-    window.onclick = function(event) {
-        const toggleModal = document.getElementById('toggleConfirmationModal');
-        if (event.target === toggleModal) window.cancelToggle();
-    }
-})();
+});
 </script>
