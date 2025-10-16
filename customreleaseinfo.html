@@ -83,10 +83,10 @@
                             <label class="switch">
                                 <input type="checkbox"
                                         {% if release.enabled %}checked{% endif %}
-                                        hx-post="{% url 'toggle_customrelease_enabled' release.id %}"
+                                        hx-post="{% url 'toggle_customrelease_enabled' release.id %}/"
                                         hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
                                         hx-swap="none"
-                                        onchange="handleHtmxToggle(this)">
+                                        hx-trigger="confirmToggleEvent" onchange="handleHtmxToggle(this)">
                                 <span class="slider"></span>
                             </label>
                         </td>
@@ -176,7 +176,6 @@
 
 <input type="hidden" name="sort" value="{{ current_sort }}">
 
-<!-- CREATE RELEASE MODAL -->
 <div id="createReleaseModal" class="portal" style="display: none;">
     <div class="portal-content" style="max-width: 500px;">
         <h3>Upload Custom Release Configuration</h3>
@@ -211,7 +210,6 @@
     </div>
 </div>
 
-<!-- CONFIRMATION MODAL -->
 <div id="confirmationModal" class="portal" style="display: none;">
     <div class="portal-content" style="max-width: 600px;">
         <h4>Confirm Custom Release Details</h4>
@@ -237,8 +235,21 @@
     </div>
 </div>
 
+<div id="toggleConfirmationModal" class="portal" style="display: none;">
+    <div class="portal-content" style="max-width: 400px;">
+        <h4>Confirm Release Status Change</h4>
+        <p id="toggleConfirmationMessage"></p>
+        
+        <div class="portal-buttons">
+            <button class="btn btn-secondary" type="button" onclick="cancelToggle()">No, Cancel</button>
+            <button class="btn btn-success" type="button" onclick="confirmToggle()">Yes, Proceed</button>
+        </div>
+    </div>
+</div>
+
 <script>
     let parsedCsvData = [];
+    let currentToggleCheckbox = null; 
 
     function getFormattedCurrentDateTime() {
         const now = new Date();
@@ -332,7 +343,6 @@
         return false;
     }
 
-    // CONFIRM BUTTON ACTION — BACKEND UPDATE
     window.submitForm = function() {
         const form = document.getElementById('uploadForm');
         const confirmModal = document.getElementById('confirmationModal');
@@ -359,29 +369,57 @@
     window.onclick = function(event) {
         const createModal = document.getElementById('createReleaseModal'); 
         const confirmModal = document.getElementById('confirmationModal');
+        const toggleModal = document.getElementById('toggleConfirmationModal');
         if (event.target === createModal) window.closeCreateModal();
         if (event.target === confirmModal) window.backToCreateModal();
+        if (event.target === toggleModal) window.cancelToggle(); 
     }
-    function handleHtmxToggle(checkbox) {
+
+    window.handleHtmxToggle = function(checkbox) {
+        currentToggleCheckbox = checkbox; 
         const action = checkbox.checked ? "enable" : "disable";
-        if (!confirm(`Are you sure you want to ${action} this release?`)) {
-            checkbox.checked = !checkbox.checked;
-            return false;
-        }
+        const message = `Are you sure you want to <strong>${action}</strong> this release?`; 
+
+        document.getElementById('toggleConfirmationMessage').innerHTML = message;
+        document.getElementById('toggleConfirmationModal').style.display = "block";
+        window.lockBodyScroll();
+    }
+    
+    window.confirmToggle = function() {
+        const checkbox = currentToggleCheckbox;
+        document.getElementById('toggleConfirmationModal').style.display = "none";
+        window.unlockBodyScroll();
+
         const row = checkbox.closest('tr');
+        
         checkbox.addEventListener('htmx:afterRequest', function (evt) {
             const xhr = evt.detail.xhr;
             if (xhr.status === 200) {
                 const data = JSON.parse(xhr.responseText);
                 if (data.enabled) {
                     row.classList.remove('disabled-row');
+                    checkbox.checked = true;
                 } else {
                     row.classList.add('disabled-row');
+                    checkbox.checked = false;
                 }
             } else {
                 alert('Failed to update status.');
-                checkbox.checked = !checkbox.checked;
+                checkbox.checked = !checkbox.checked; 
             }
         }, { once: true });
+        
+        htmx.trigger(checkbox, 'confirmToggleEvent'); 
+        
+        currentToggleCheckbox = null;
+    }
+
+    window.cancelToggle = function() {
+        if (currentToggleCheckbox) {
+            currentToggleCheckbox.checked = !currentToggleCheckbox.checked; 
+        }
+        document.getElementById('toggleConfirmationModal').style.display = "none";
+        window.unlockBodyScroll();
+        currentToggleCheckbox = null;
     }
 </script>
