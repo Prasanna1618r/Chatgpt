@@ -1,8 +1,5 @@
 #!/bin/sh
-##############################################
-# version 5.0
-# author devops@mitsogo.com
-##############################################
+
 
 projectdir="/var/www/html/mobarmour"
 workdir="/opt/mitsogo"
